@@ -1,0 +1,6 @@
+Data/raw/
+Data/processed/
+Data/logs/
+*.csv
+*.csv.gz
+*.parquet
