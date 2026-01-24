@@ -9,6 +9,7 @@ dependencies = [
   "pathlib",
   "pyarrow",
   "polars",
+  "plotly",
   "matplotlib",
   "seaborn",
   "scikit-learn",
