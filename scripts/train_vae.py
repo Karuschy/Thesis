@@ -2,7 +2,7 @@
 Train VAE script for volatility surface reconstruction.
 
 Usage:
-    python scripts/train_vae.py --parquet Data/processed/parquet/AAPL_vsurf_processed.parquet
+    python scripts/train_vae.py --parquet data/processed/vae/parquet/AAPL_vsurf_processed.parquet
 """
 from __future__ import annotations
 

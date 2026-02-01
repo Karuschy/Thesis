@@ -20,27 +20,72 @@ class PathConfig:
     """Paths for data and artifacts."""
     # Base directories
     project_root: Path = Path(".")
-    data_dir: Path = field(default_factory=lambda: Path("./Data"))
+    data_dir: Path = field(default_factory=lambda: Path("./data"))
     artifacts_dir: Path = field(default_factory=lambda: Path("./artifacts"))
     
-    # Data subdirectories
+    # =========================================================================
+    # Raw data directories (WRDS IvyDB)
+    # =========================================================================
     @property
     def raw_dir(self) -> Path:
         return self.data_dir / "raw"
     
     @property
+    def ivydb_dir(self) -> Path:
+        return self.raw_dir / "ivydb"
+    
+    @property
+    def raw_vol_surface_dir(self) -> Path:
+        return self.ivydb_dir / "vol_surface"
+    
+    @property
+    def raw_security_price_dir(self) -> Path:
+        return self.ivydb_dir / "security_price"
+    
+    @property
+    def raw_zero_curve_dir(self) -> Path:
+        return self.ivydb_dir / "zero_curve"
+    
+    @property
+    def raw_std_option_price_dir(self) -> Path:
+        return self.ivydb_dir / "std_option_price"
+    
+    # =========================================================================
+    # Processed data directories
+    # =========================================================================
+    @property
     def processed_dir(self) -> Path:
         return self.data_dir / "processed"
     
+    # VAE data
     @property
-    def parquet_dir(self) -> Path:
-        return self.processed_dir / "parquet"
+    def vae_dir(self) -> Path:
+        return self.processed_dir / "vae"
     
     @property
-    def meta_dir(self) -> Path:
-        return self.processed_dir / "meta"
+    def vae_parquet_dir(self) -> Path:
+        return self.vae_dir / "parquet"
     
-    # Artifact subdirectories
+    @property
+    def vae_meta_dir(self) -> Path:
+        return self.vae_dir / "meta"
+    
+    # Heston data
+    @property
+    def heston_dir(self) -> Path:
+        return self.processed_dir / "heston"
+    
+    @property
+    def heston_inputs_dir(self) -> Path:
+        return self.heston_dir / "inputs"
+    
+    @property
+    def heston_surfaces_dir(self) -> Path:
+        return self.heston_dir / "surfaces"
+    
+    # =========================================================================
+    # Artifact directories
+    # =========================================================================
     @property
     def checkpoints_dir(self) -> Path:
         return self.artifacts_dir / "train"
@@ -49,14 +94,36 @@ class PathConfig:
     def eval_dir(self) -> Path:
         return self.artifacts_dir / "eval"
     
+    # =========================================================================
+    # Path helpers
+    # =========================================================================
+    def vae_parquet_path(self, ticker: str) -> Path:
+        """Get VAE training parquet path for a specific ticker."""
+        return self.vae_parquet_dir / f"{ticker}_vsurf_processed.parquet"
+    
+    def heston_inputs_path(self, ticker: str) -> Path:
+        """Get Heston inputs parquet path for a specific ticker."""
+        return self.heston_inputs_dir / f"{ticker}_heston_inputs.parquet"
+    
+    def heston_surface_path(self, ticker: str) -> Path:
+        """Get Heston surface parquet path for a specific ticker."""
+        return self.heston_surfaces_dir / f"{ticker}_heston_surface.parquet"
+    
+    # Legacy alias for backward compatibility
     def parquet_path(self, ticker: str) -> Path:
-        """Get parquet path for a specific ticker."""
-        return self.parquet_dir / f"{ticker}_vsurf_processed.parquet"
+        """Alias for vae_parquet_path (backward compatibility)."""
+        return self.vae_parquet_path(ticker)
     
     def ensure_dirs(self) -> None:
         """Create all directories if they don't exist."""
-        for d in [self.raw_dir, self.parquet_dir, self.meta_dir, 
-                  self.checkpoints_dir, self.eval_dir]:
+        dirs = [
+            self.raw_vol_surface_dir, self.raw_security_price_dir,
+            self.raw_zero_curve_dir, self.raw_std_option_price_dir,
+            self.vae_parquet_dir, self.vae_meta_dir,
+            self.heston_inputs_dir, self.heston_surfaces_dir,
+            self.checkpoints_dir, self.eval_dir,
+        ]
+        for d in dirs:
             d.mkdir(parents=True, exist_ok=True)
 
 

@@ -21,6 +21,10 @@ dependencies = [
   # Utilities
   "scikit-learn",
   "tqdm",
+  "scipy>=1.10",
+  
+  # Quantitative finance
+  "QuantLib>=1.30",
   
   # Jupyter
   "jupyter",
