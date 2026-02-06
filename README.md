@@ -109,6 +109,16 @@ Pull and process options data from WRDS IvyDB.
 
 Train and evaluate the VAE model.
 
+```
+📁 notebooks/experiments/
+```
+
+| Notebook | Description |
+|----------|-------------|
+| `training_vae.ipynb` | Train the VAE model (interactive) |
+| `eval_vae.ipynb` | Evaluate model, visualize results, save surfaces |
+
+**Alternative: CLI Scripts**
 ```bash
 # Train VAE
 python scripts/train_vae.py \
@@ -182,7 +192,8 @@ Or use the interactive notebook:
 
 | Notebook | Purpose | Prerequisites |
 |----------|---------|---------------|
-| `experiment.ipynb` | VAE training experiments | VAE training data |
+| `training_vae.ipynb` | Train the VAE model | VAE training data |
+| `eval_vae.ipynb` | Evaluate VAE, visualize, save surfaces | Trained model |
 | `heston_calibration.ipynb` | Run full Heston calibration | Heston inputs |
 | `test_heston_calibration.ipynb` | Debug/test Heston functions | Heston inputs |
 | `compare_vae_heston.ipynb` | Compare VAE vs Heston results | Both surfaces generated |
