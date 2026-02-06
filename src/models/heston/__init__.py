@@ -4,6 +4,7 @@ Heston model utilities.
 Submodules:
 - bs: Black-Scholes pricing and implied volatility
 - pricer: Heston pricing via QuantLib
+- calibrate: Heston model calibration
 """
 
 from .bs import (
@@ -14,6 +15,11 @@ from .bs import (
     bs_put,
     bs_vega,
     strike_from_delta,
+)
+from .calibrate import (
+    CalibrationResult,
+    calibrate_heston,
+    calibrate_heston_by_date,
 )
 from .pricer import (
     HestonParams,
@@ -38,4 +44,8 @@ __all__ = [
     "heston_iv",
     "heston_price_surface",
     "heston_iv_surface",
+    # Calibration
+    "CalibrationResult",
+    "calibrate_heston",
+    "calibrate_heston_by_date",
 ]

@@ -163,9 +163,19 @@ def heston_price(
     float
         Option price.
     """
+    # Ensure Python floats (QuantLib doesn't accept numpy types)
+    S0 = float(S0)
+    K = float(K)
+    T = float(T)
+    r = float(r)
+    q = float(q)
+    
+    # Normalize cp_flag to "C" or "P"
+    is_call = cp_flag in ("C", "c", "call", "Call", "CALL")
+    
     if T <= 0:
         # Handle expired options
-        if cp_flag == "C":
+        if is_call:
             return max(S0 - K, 0.0)
         else:
             return max(K - S0, 0.0)
@@ -181,7 +191,7 @@ def heston_price(
     # Calculate maturity date
     maturity_date = eval_date + ql.Period(int(T * 365), ql.Days)
     
-    option_type = ql.Option.Call if cp_flag == "C" else ql.Option.Put
+    option_type = ql.Option.Call if is_call else ql.Option.Put
     payoff = ql.PlainVanillaPayoff(option_type, K)
     exercise = ql.EuropeanExercise(maturity_date)
     
@@ -230,8 +240,12 @@ def heston_iv(
     float or None
         Implied volatility, or None if inversion fails.
     """
-    price = heston_price(S0, K, T, r, q, params, cp_flag)
-    return bs_iv(price, S0, K, T, r, q, cp_flag)
+    # Normalize cp_flag
+    is_call = cp_flag in ("C", "c", "call", "Call", "CALL")
+    normalized_flag = "C" if is_call else "P"
+    
+    price = heston_price(S0, K, T, r, q, params, normalized_flag)
+    return bs_iv(price, S0, K, T, r, q, normalized_flag)
 
 
 def heston_price_surface(

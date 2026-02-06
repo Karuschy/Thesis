@@ -13,6 +13,7 @@ import json
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 import torch
 
 from src.data.dataloaders import create_dataloaders
@@ -282,6 +283,43 @@ def main():
         "dates": result.dates,
     }, latent_path)
     print(f"\nLatent representations saved to: {latent_path}")
+    
+    # 4. Save reconstructed surfaces for comparison with Heston
+    # Save in same format as Heston: surfaces.npy + dates.csv
+    surfaces_dir = output_dir / "surfaces"
+    surfaces_dir.mkdir(exist_ok=True)
+    
+    # Save surfaces array [N, C, H, W] in original IV space
+    import pandas as pd
+    vae_surfaces = recons_orig.numpy()
+    surfaces_path = surfaces_dir / "vae_surfaces.npy"
+    np.save(surfaces_path, vae_surfaces)
+    print(f"\nVAE surfaces saved to: {surfaces_path}")
+    print(f"  Shape: {vae_surfaces.shape} (N, C, H, W)")
+    
+    # Save dates for matching with Heston
+    dates_df = pd.DataFrame({"date": result.dates})
+    dates_path = surfaces_dir / "vae_surface_dates.csv"
+    dates_df.to_csv(dates_path, index=False)
+    print(f"  Dates saved to: {dates_path}")
+    
+    # Also save targets (original market IVs) for comparison
+    target_surfaces = targets_orig.numpy()
+    targets_path = surfaces_dir / "market_surfaces.npy"
+    np.save(targets_path, target_surfaces)
+    print(f"  Market surfaces saved to: {targets_path}")
+    
+    # Save grid spec for reference
+    grid_spec_info = {
+        "days_grid": days_grid.tolist(),
+        "delta_grid": delta_grid.tolist(),
+        "cp_order": list(cp_order),
+        "shape": list(vae_surfaces.shape),
+    }
+    grid_path = surfaces_dir / "grid_spec.json"
+    with open(grid_path, "w") as f:
+        json.dump(grid_spec_info, f, indent=2)
+    print(f"  Grid spec saved to: {grid_path}")
     
     print(f"\n✓ Evaluation complete! Results in: {output_dir}")
 

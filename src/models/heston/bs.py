@@ -121,20 +121,19 @@ def bs_price(
     ----------
     S, K, T, r, q, sigma : float
         See bs_call / bs_put.
-    cp_flag : {"C", "P"}
-        "C" for call, "P" for put.
+    cp_flag : {"C", "P", "call", "put"}
+        "C" or "call" for call, "P" or "put" for put.
 
     Returns
     -------
     float
         Option price.
     """
-    if cp_flag == "C":
+    is_call = cp_flag in ("C", "c", "call", "Call", "CALL")
+    if is_call:
         return bs_call(S, K, T, r, q, sigma)
-    elif cp_flag == "P":
-        return bs_put(S, K, T, r, q, sigma)
     else:
-        raise ValueError(f"cp_flag must be 'C' or 'P', got {cp_flag}")
+        return bs_put(S, K, T, r, q, sigma)
 
 
 def bs_vega(
@@ -198,11 +197,15 @@ def bs_iv(
     float or None
         Implied volatility, or None if root not found.
     """
+    # Normalize cp_flag
+    is_call = cp_flag in ("C", "c", "call", "Call", "CALL")
+    normalized_flag = "C" if is_call else "P"
+    
     # Intrinsic value bounds
     forward = S * math.exp((r - q) * T)
     df = math.exp(-r * T)
     
-    if cp_flag == "C":
+    if is_call:
         intrinsic = max(forward - K, 0.0) * df
         upper_bound = S * math.exp(-q * T)  # Max call value
     else:
@@ -218,7 +221,7 @@ def bs_iv(
         return sigma_low
     
     def objective(sigma: float) -> float:
-        return bs_price(S, K, T, r, q, sigma, cp_flag) - price
+        return bs_price(S, K, T, r, q, sigma, normalized_flag) - price
     
     try:
         # Check bounds have opposite signs
@@ -259,7 +262,7 @@ def bs_delta(
     ----------
     S, K, T, r, q, sigma : float
         Standard BS parameters.
-    cp_flag : {"C", "P"}
+    cp_flag : {"C", "P", "call", "put"}
         Call or put.
 
     Returns
@@ -267,15 +270,17 @@ def bs_delta(
     float
         Delta (dPrice/dS).
     """
+    is_call = cp_flag in ("C", "c", "call", "Call", "CALL")
+    
     if T <= 0:
-        if cp_flag == "C":
+        if is_call:
             return 1.0 if S > K else 0.0
         else:
             return -1.0 if S < K else 0.0
     
     d1 = bs_d1(S, K, T, r, q, sigma)
     
-    if cp_flag == "C":
+    if is_call:
         return math.exp(-q * T) * norm.cdf(d1)
     else:
         return -math.exp(-q * T) * norm.cdf(-d1)
@@ -302,7 +307,7 @@ def strike_from_delta(
     delta : float
         Target delta (positive for calls, negative for puts,
         or absolute value if cp_flag specified).
-    cp_flag : {"C", "P"}
+    cp_flag : {"C", "P", "call", "put"}
         Call or put.
 
     Returns
@@ -310,8 +315,10 @@ def strike_from_delta(
     float
         Strike corresponding to the given delta.
     """
+    is_call = cp_flag in ("C", "c", "call", "Call", "CALL")
+    
     # Ensure delta is in proper range
-    if cp_flag == "C":
+    if is_call:
         # Call delta in (0, 1)
         delta = abs(delta)
         d1 = norm.ppf(delta * math.exp(q * T))
