@@ -15,7 +15,7 @@ import torch
 
 from src.config import set_seed
 from src.data.dataloaders import create_dataloaders
-from src.models.vae_mlp import MLPVAE
+from src.models import create_model
 from src.utils.training import fit_vae, evaluate
 
 
@@ -33,10 +33,20 @@ def parse_args():
     parser.add_argument("--val_ratio", type=float, default=0.10)
     
     # Model args
+    parser.add_argument("--model_type", type=str, default="mlp",
+                        choices=["mlp", "conv"],
+                        help="VAE architecture: 'mlp' (baseline) or 'conv' (spatial)")
     parser.add_argument("--latent_dim", type=int, default=8,
                         help="Latent dimension (start small: 4-8)")
     parser.add_argument("--hidden_dims", type=int, nargs="+", default=[256, 128],
-                        help="Hidden layer sizes for encoder/decoder")
+                        help="Hidden layer sizes for MLP encoder/decoder")
+    # Conv-specific
+    parser.add_argument("--channels", type=int, nargs="+", default=[32, 64, 128],
+                        help="Channel widths for ConvVAE encoder stages")
+    parser.add_argument("--fc_dim", type=int, default=256,
+                        help="FC bottleneck width after conv flatten (ConvVAE only)")
+    parser.add_argument("--no_batchnorm", action="store_true",
+                        help="Disable BatchNorm in ConvVAE")
     
     # Training args
     parser.add_argument("--epochs", type=int, default=100)
@@ -80,7 +90,8 @@ def main():
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     
-    # Create dataloaders
+    # Create dataloaders (enable pin_memory + workers for GPU)
+    use_cuda = device.type == "cuda"
     print(f"Loading data from: {args.parquet}")
     bundle = create_dataloaders(
         parquet_path=args.parquet,
@@ -90,6 +101,8 @@ def main():
         batch_size=args.batch_size,
         normalize=args.normalize,
         return_date=False,
+        pin_memory=use_cuda,
+        num_workers=4 if use_cuda else 0,
     )
     
     print(f"Data splits - Train: {len(bundle.train_dates)}, Val: {len(bundle.val_dates)}, Test: {len(bundle.test_dates)}")
@@ -97,12 +110,21 @@ def main():
     print(f"Grid spec: {len(bundle.grid_spec.days_grid)} maturities, {len(bundle.grid_spec.delta_grid)} deltas")
     
     # Create model
-    model = MLPVAE(
+    model = create_model(
+        model_type=args.model_type,
         in_shape=bundle.input_shape,
         latent_dim=args.latent_dim,
         hidden_dims=tuple(args.hidden_dims),
+        channels=tuple(args.channels),
+        fc_dim=args.fc_dim,
+        batchnorm=not args.no_batchnorm,
     )
-    print(f"\nModel: latent_dim={args.latent_dim}, hidden_dims={args.hidden_dims}")
+    arch_info = (
+        f"hidden_dims={args.hidden_dims}"
+        if args.model_type == "mlp"
+        else f"channels={args.channels}, fc_dim={args.fc_dim}"
+    )
+    print(f"\nModel [{args.model_type}]: latent_dim={args.latent_dim}, {arch_info}")
     total_params = sum(p.numel() for p in model.parameters())
     print(f"Total parameters: {total_params:,}")
     
@@ -128,6 +150,7 @@ def main():
     
     # Save final checkpoint
     checkpoint = {
+        "model_type": args.model_type,
         "model_state_dict": model.state_dict(),
         "args": vars(args),
         "input_shape": bundle.input_shape,

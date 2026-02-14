@@ -51,7 +51,7 @@ def evaluate(
     
     for batch in loader:
         x = batch[0] if isinstance(batch, (list, tuple)) else batch
-        x = x.to(device)
+        x = x.to(device, non_blocking=True)
         recon, mu, logvar = model(x)
         loss, r, k = vae_loss(recon, x, mu, logvar, beta=beta)
         bs = x.size(0)
@@ -88,7 +88,7 @@ def train_epoch(
     
     for batch in tqdm(loader, desc="train", leave=False):
         x = batch[0] if isinstance(batch, (list, tuple)) else batch
-        x = x.to(device)
+        x = x.to(device, non_blocking=True)
 
         recon, mu, logvar = model(x)
         loss, r, k = vae_loss(recon, x, mu, logvar, beta=beta)

@@ -1,6 +1,33 @@
-Data/raw/
-Data/processed/
-Data/logs/
-*.csv
-*.csv.gz
-*.parquet
+# ── Data & artifacts (large / generated) ─────────────────────────────
+data/
+artifacts/
+
+# ── Python bytecode ──────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+
+# ── Egg / build artifacts ────────────────────────────────────────────
+*.egg-info/
+*.egg
+dist/
+build/
+
+# ── Virtual environments ─────────────────────────────────────────────
+.venv/
+venv/
+
+# ── Jupyter checkpoints ──────────────────────────────────────────────
+.ipynb_checkpoints/
+
+# ── IDE ──────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+
+# ── OS junk ──────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── Misc ─────────────────────────────────────────────────────────────
+*.log
+uv.lock

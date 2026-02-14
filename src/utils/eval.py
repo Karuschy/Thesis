@@ -118,7 +118,7 @@ def evaluate_vae(
         else:
             x = batch
         
-        x = x.to(device)
+        x = x.to(device, non_blocking=True)
         bs = x.size(0)
         
         # Forward pass

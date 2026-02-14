@@ -17,7 +17,7 @@ import pandas as pd
 import torch
 
 from src.data.dataloaders import create_dataloaders
-from src.models.vae_mlp import MLPVAE
+from src.models import create_model
 from src.utils.eval import (
     evaluate_vae,
     compute_per_cell_error,
@@ -155,7 +155,8 @@ def main():
     train_args = checkpoint["args"]
     input_shape = tuple(checkpoint["input_shape"])
     
-    # Recreate dataloaders with same config
+    # Recreate dataloaders with same config (enable pin_memory for GPU)
+    use_cuda = device.type == "cuda"
     print(f"Loading data from: {args.parquet}")
     bundle = create_dataloaders(
         parquet_path=args.parquet,
@@ -165,19 +166,26 @@ def main():
         batch_size=train_args.get("batch_size", 32),
         normalize=train_args.get("normalize", True),
         return_date=True,  # Need dates for plotting
+        pin_memory=use_cuda,
+        num_workers=4 if use_cuda else 0,
     )
     
     print(f"Test set size: {len(bundle.test_dates)} samples")
     
-    # Recreate model
-    model = MLPVAE(
+    # Recreate model (supports both MLP and Conv)
+    model_type = checkpoint.get("model_type", train_args.get("model_type", "mlp"))
+    model = create_model(
+        model_type=model_type,
         in_shape=input_shape,
         latent_dim=train_args.get("latent_dim", 8),
         hidden_dims=tuple(train_args.get("hidden_dims", [256, 128])),
+        channels=tuple(train_args.get("channels", [32, 64, 128])),
+        fc_dim=train_args.get("fc_dim", 256),
+        batchnorm=not train_args.get("no_batchnorm", False),
     )
     model.load_state_dict(checkpoint["model_state_dict"])
     model.to(device)
-    print(f"Model loaded: latent_dim={model.latent_dim}")
+    print(f"Model [{model_type}] loaded: latent_dim={model.latent_dim}")
     
     # Run detailed evaluation
     print("\nRunning detailed evaluation on test set...")

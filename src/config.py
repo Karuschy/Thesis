@@ -16,21 +16,29 @@ import numpy as np
 import torch
 
 
-def set_seed(seed: int = 42) -> None:
+def set_seed(seed: int = 42, deterministic: bool = False) -> None:
     """
-    Set random seeds for full reproducibility.
-    
+    Set random seeds for reproducibility.
+
     Covers Python stdlib, NumPy, and PyTorch (CPU + CUDA).
     Call once at the start of any script or notebook.
+
+    Args:
+        seed: Random seed.
+        deterministic: If True, enforce fully deterministic cuDNN
+            (slower).  If False (default), enable cuDNN benchmark
+            autotuner for faster training on fixed-size inputs.
     """
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
-    # Deterministic backends (may reduce performance slightly)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
     os.environ["PYTHONHASHSEED"] = str(seed)
+
+    torch.backends.cudnn.deterministic = deterministic
+    # benchmark=True lets cuDNN pick the fastest algorithm for fixed-size
+    # inputs (our grids are always the same shape).
+    torch.backends.cudnn.benchmark = not deterministic
 
 
 # ============================================================================
@@ -189,17 +197,19 @@ class DataConfig:
 @dataclass
 class ModelConfig:
     """Configuration for VAE model architecture."""
-    # Architecture type
-    model_type: Literal["grid", "pointwise"] = "grid"
+    # Architecture type: "mlp" (baseline) or "conv" (spatial)
+    model_type: Literal["mlp", "conv"] = "mlp"
     
     # Latent space
     latent_dim: int = 8
     
-    # Encoder hidden layers
+    # --- MLP-specific ---
     hidden_dims: tuple[int, ...] = (256, 128)
     
-    # Pointwise decoder hidden layers (only used if model_type="pointwise")
-    decoder_hidden_dims: tuple[int, ...] = (64, 32)
+    # --- Conv-specific ---
+    channels: tuple[int, ...] = (32, 64, 128)
+    fc_dim: int = 256
+    batchnorm: bool = True
     
     # Input shape will be set from data
     in_shape: tuple[int, int, int] | None = None
