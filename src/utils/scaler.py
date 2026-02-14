@@ -22,7 +22,8 @@ class ChannelStandardizer:
         if self.mean is None or self.std is None:
             raise RuntimeError("Call fit() before transform().")
         if x.dim() == 3:
-            return (x.unsqueeze(0) - self.mean) / self.std
+            # Unsqueeze to [1,C,H,W], transform, then squeeze back to [C,H,W]
+            return ((x.unsqueeze(0) - self.mean) / self.std).squeeze(0)
         if x.dim() == 4:
             return (x - self.mean) / self.std
         raise ValueError(f"Expected [C,H,W] or [N,C,H,W], got {tuple(x.shape)}")
@@ -31,7 +32,8 @@ class ChannelStandardizer:
         if self.mean is None or self.std is None:
             raise RuntimeError("Call fit() before inverse_transform().")
         if x.dim() == 3:
-            return x.unsqueeze(0) * self.std + self.mean
+            # Unsqueeze to [1,C,H,W], inverse, then squeeze back to [C,H,W]
+            return (x.unsqueeze(0) * self.std + self.mean).squeeze(0)
         if x.dim() == 4:
             return x * self.std + self.mean
         raise ValueError(f"Expected [C,H,W] or [N,C,H,W], got {tuple(x.shape)}")

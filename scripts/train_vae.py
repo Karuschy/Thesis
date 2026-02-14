@@ -13,6 +13,7 @@ from pathlib import Path
 
 import torch
 
+from src.config import set_seed
 from src.data.dataloaders import create_dataloaders
 from src.models.vae_mlp import MLPVAE
 from src.utils.training import fit_vae, evaluate
@@ -45,6 +46,8 @@ def parse_args():
                         help="KL weight (beta-VAE)")
     parser.add_argument("--patience", type=int, default=None,
                         help="Early stopping patience (epochs without improvement)")
+    parser.add_argument("--weight_decay", type=float, default=0.0,
+                        help="L2 regularization weight for Adam optimizer")
     parser.add_argument("--normalize", action="store_true", default=True,
                         help="Normalize data (fit on train)")
     parser.add_argument("--no_normalize", dest="normalize", action="store_false")
@@ -54,12 +57,17 @@ def parse_args():
                         help="Directory to save checkpoints and logs")
     parser.add_argument("--device", type=str, default="auto",
                         help="Device: 'cpu', 'cuda', or 'auto'")
+    parser.add_argument("--seed", type=int, default=42,
+                        help="Random seed for reproducibility")
     
     return parser.parse_args()
 
 
 def main():
     args = parse_args()
+    
+    # Reproducibility
+    set_seed(args.seed)
     
     # Setup device
     if args.device == "auto":
@@ -106,6 +114,7 @@ def main():
         val_loader=bundle.val_loader,
         epochs=args.epochs,
         lr=args.lr,
+        weight_decay=args.weight_decay,
         beta=args.beta,
         device=device,
         checkpoint_dir=output_dir,  # Will save best_model.pt here

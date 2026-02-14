@@ -112,6 +112,7 @@ def fit_vae(
     val_loader: DataLoader,
     epochs: int = 30,
     lr: float = 1e-3,
+    weight_decay: float = 0.0,
     beta: float = 1.0,
     device: str | torch.device = "cpu",
     checkpoint_dir: Optional[str | Path] = None,
@@ -126,6 +127,7 @@ def fit_vae(
         val_loader: Validation data loader.
         epochs: Maximum number of training epochs.
         lr: Learning rate for Adam optimizer.
+        weight_decay: L2 regularization weight for Adam optimizer.
         beta: KL divergence weight (beta-VAE).
         device: Device to train on ('cpu', 'cuda', or torch.device).
         checkpoint_dir: If provided, save best model checkpoint here.
@@ -136,7 +138,7 @@ def fit_vae(
     """
     device = torch.device(device)
     model.to(device)
-    opt = torch.optim.Adam(model.parameters(), lr=lr)
+    opt = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
 
     history: list[TrainStats] = []
     best_val_loss = float("inf")
