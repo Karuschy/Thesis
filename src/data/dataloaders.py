@@ -47,6 +47,7 @@ def create_dataloaders(
     val_ratio: float = 0.10,
     batch_size: int = 32,
     normalize: bool = True,
+    use_log_transform: bool = False,
     num_workers: int = 0,
     return_date: bool = False,
     pin_memory: bool = False,
@@ -61,6 +62,8 @@ def create_dataloaders(
         val_ratio: Fraction of data for validation (chronologically after train).
         batch_size: Batch size for all loaders.
         normalize: If True, fit ChannelStandardizer on train and apply to all splits.
+        use_log_transform: If True, apply log(IV) before z-scoring (and exp after
+            inverse_transform), so the VAE trains in log-IV space.
         num_workers: Number of worker processes for data loading.
         return_date: If True, dataset returns (x, date) tuples.
         pin_memory: If True, enables pin_memory for CUDA transfers.
@@ -92,7 +95,7 @@ def create_dataloaders(
     # Normalization (fit on train only!)
     scaler: Optional[ChannelStandardizer] = None
     if normalize:
-        scaler = ChannelStandardizer()
+        scaler = ChannelStandardizer(log_transform=use_log_transform)
         scaler.fit(X_train)
         X_train = scaler.transform(X_train)
         X_val = scaler.transform(X_val)

@@ -163,7 +163,7 @@ def calibrate_heston(
         
         helper = ql.HestonModelHelper(
             period,
-            ql.TARGET(),  # Calendar
+            ql.NullCalendar(),  # Calendar (consistent with pricer.py)
             float(S0),  # Ensure float
             K,
             vol_quote,
@@ -218,7 +218,8 @@ def calibrate_heston(
         try:
             err = helper.calibrationError()
             errors.append(err ** 2)
-        except:
+        except Exception:
+            # Skip helpers that fail to price (e.g., degenerate parameters)
             pass
     
     rmse = np.sqrt(np.mean(errors)) if errors else np.inf

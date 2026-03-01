@@ -165,6 +165,7 @@ def main():
         val_ratio=train_args.get("val_ratio", 0.10),
         batch_size=train_args.get("batch_size", 32),
         normalize=train_args.get("normalize", True),
+        use_log_transform=train_args.get("log_transform", False),
         return_date=True,  # Need dates for plotting
         pin_memory=use_cuda,
         num_workers=4 if use_cuda else 0,

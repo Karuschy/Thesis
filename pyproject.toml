@@ -48,3 +48,15 @@ include = ["src*"]
 [build-system]
 requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
+
+# ------------------------------------------------------------------
+# uv: fetch PyTorch from the CUDA 12.4 wheel index instead of PyPI
+# (PyPI only has CPU-only builds)
+# ------------------------------------------------------------------
+[[tool.uv.index]]
+name = "pytorch-cu124"
+url = "https://download.pytorch.org/whl/cu124"
+explicit = true          # only used for packages listed below
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu124" }

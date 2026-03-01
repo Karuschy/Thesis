@@ -6,6 +6,7 @@ src/data/__init__.py
 src/data/dataloaders.py
 src/data/volsurface_grid.py
 src/models/__init__.py
+src/models/vae_conv.py
 src/models/vae_mlp.py
 src/models/heston/__init__.py
 src/models/heston/bs.py

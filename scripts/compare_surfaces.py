@@ -1,13 +1,15 @@
 """
-Three-way comparison: MLP VAE vs Conv VAE vs Heston vs Market.
+N-way comparison: VAE variants vs Heston vs Market.
 
 Loads all surface sets, aligns by common dates, and computes comparison
 metrics + plots.
 
 Usage:
     python scripts/compare_surfaces.py \
-        --mlp_dir  artifacts/eval/mlp/surfaces \
-        --conv_dir artifacts/eval/conv/surfaces \
+        --vae_dir "MLP=artifacts/eval/mlp/surfaces" \
+        --vae_dir "Conv=artifacts/eval/conv/surfaces" \
+        --vae_dir "MLP-log=artifacts/eval/mlp_log/surfaces" \
+        --vae_dir "Conv-log=artifacts/eval/conv_log/surfaces" \
         --heston_dir data/processed/heston/surfaces \
         --output_dir artifacts/comparison
 """
@@ -222,7 +224,7 @@ def save_tables(
     # ── 7. Plain-text report ─────────────────────────────────────────────
     report_lines = []
     report_lines.append("=" * 70)
-    report_lines.append("  3-WAY COMPARISON REPORT")
+    report_lines.append("  N-WAY COMPARISON REPORT")
     report_lines.append(f"  Models: {', '.join(names)}")
     report_lines.append(f"  Common dates: {len(dates)}")
     report_lines.append(f"  Date range: {date_strs[0]} → {date_strs[-1]}")
@@ -273,8 +275,10 @@ def save_tables(
 
 # ── Plotting ─────────────────────────────────────────────────────────────
 MODEL_COLOURS = {
-    "MLP VAE": "#1f77b4",
-    "Conv VAE": "#2ca02c",
+    "MLP": "#1f77b4",
+    "Conv": "#2ca02c",
+    "MLP-log": "#9467bd",
+    "Conv-log": "#8c564b",
     "Heston": "#ff7f0e",
 }
 
@@ -510,14 +514,16 @@ def save_comparison_plots(
 # ── CLI ──────────────────────────────────────────────────────────────────
 def parse_args():
     p = argparse.ArgumentParser(
-        description="3-way comparison: MLP VAE / Conv VAE / Heston vs Market",
+        description="N-way comparison: VAE variants / Heston vs Market",
     )
-    p.add_argument("--mlp_dir", type=str,
-                   default="artifacts/eval/mlp/surfaces",
-                   help="MLP VAE eval surfaces directory")
-    p.add_argument("--conv_dir", type=str,
-                   default="artifacts/eval/conv/surfaces",
-                   help="Conv VAE eval surfaces directory")
+    p.add_argument("--vae_dir", type=str, action="append", default=None,
+                   help="'Name=path' pair for a VAE model (repeatable). "
+                        "E.g. --vae_dir 'MLP=artifacts/eval/mlp/surfaces'")
+    # Legacy convenience flags (translated to --vae_dir entries)
+    p.add_argument("--mlp_dir", type=str, default=None,
+                   help="(Legacy) MLP VAE surfaces directory")
+    p.add_argument("--conv_dir", type=str, default=None,
+                   help="(Legacy) Conv VAE surfaces directory")
     p.add_argument("--heston_dir", type=str,
                    default="data/processed/heston/surfaces",
                    help="Heston calibrated surfaces directory")
@@ -530,37 +536,79 @@ def parse_args():
     return p.parse_args()
 
 
+def _parse_vae_dirs(args) -> List[Tuple[str, Path]]:
+    """Return list of (name, path) for all VAE models."""
+    entries: List[Tuple[str, Path]] = []
+    # Legacy flags
+    if args.mlp_dir:
+        entries.append(("MLP", Path(args.mlp_dir)))
+    if args.conv_dir:
+        entries.append(("Conv", Path(args.conv_dir)))
+    # --vae_dir entries
+    if args.vae_dir:
+        for item in args.vae_dir:
+            if "=" in item:
+                name, path = item.split("=", 1)
+                entries.append((name.strip(), Path(path.strip())))
+            else:
+                path = Path(item)
+                name = path.parent.name  # infer name from parent dir
+                entries.append((name, path))
+    # Defaults if nothing provided
+    if not entries:
+        entries = [
+            ("MLP", Path("artifacts/eval/mlp/surfaces")),
+            ("Conv", Path("artifacts/eval/conv/surfaces")),
+        ]
+    return entries
+
+
 # ── Main ─────────────────────────────────────────────────────────────────
 def main():
     args = parse_args()
-    mlp_dir = Path(args.mlp_dir)
-    conv_dir = Path(args.conv_dir)
+    vae_entries = _parse_vae_dirs(args)
     heston_dir = Path(args.heston_dir)
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # ── Load ─────────────────────────────────────────────────────────────
-    print("Loading MLP VAE surfaces...")
-    mlp_surf, mlp_market, mlp_dates, grid_spec = load_vae_surfaces(mlp_dir)
-    print(f"  MLP VAE:  {mlp_surf.shape}  ({len(mlp_dates)} dates)")
+    # ── Load VAE surfaces ────────────────────────────────────────────────
+    vae_surfs: Dict[str, np.ndarray] = {}
+    vae_dates_map: Dict[str, np.ndarray] = {}
+    grid_spec = None
+    market_surf = None
+    market_dates = None
 
-    print("Loading Conv VAE surfaces...")
-    conv_surf, conv_market, conv_dates, _ = load_vae_surfaces(conv_dir)
-    print(f"  Conv VAE: {conv_surf.shape}  ({len(conv_dates)} dates)")
+    for name, path in vae_entries:
+        print(f"Loading {name} VAE surfaces from {path} ...")
+        surf, market, dates, gs = load_vae_surfaces(path)
+        print(f"  {name}: {surf.shape}  ({len(dates)} dates)")
+        vae_surfs[name] = surf
+        vae_dates_map[name] = dates
+        if grid_spec is None:
+            grid_spec = gs
+        if market_surf is None:
+            market_surf = market
+            market_dates = dates
 
+    # ── Load Heston ──────────────────────────────────────────────────────
     print("Loading Heston surfaces...")
     heston_surf, heston_dates = load_heston_surfaces(heston_dir, args.ticker)
     print(f"  Heston:   {heston_surf.shape}  ({len(heston_dates)} dates)")
 
     # ── Align to common dates ────────────────────────────────────────────
     print("\nAligning to common dates...")
-    aligned, common_dates = align_multiple(
-        (mlp_surf, mlp_dates),
-        (conv_surf, conv_dates),
-        (heston_surf, heston_dates),
-        (mlp_market, mlp_dates),
-    )
-    mlp_a, conv_a, heston_a, market_a = aligned
+    # Build list of (surf, dates) for alignment
+    all_pairs: List[Tuple[np.ndarray, np.ndarray]] = []
+    all_names: List[str] = []
+    for name in vae_surfs:
+        all_pairs.append((vae_surfs[name], vae_dates_map[name]))
+        all_names.append(name)
+    all_pairs.append((heston_surf, heston_dates))
+    all_names.append("Heston")
+    all_pairs.append((market_surf, market_dates))
+    all_names.append("_market")
+
+    aligned, common_dates = align_multiple(*all_pairs)
     n = len(common_dates)
     print(f"  Common dates: {n}")
     if n == 0:
@@ -568,12 +616,13 @@ def main():
         return
     print(f"  Range: {str(common_dates[0])[:10]}  →  {str(common_dates[-1])[:10]}")
 
-    # ── Metrics ──────────────────────────────────────────────────────────
-    model_surfaces = {
-        "MLP VAE": mlp_a,
-        "Conv VAE": conv_a,
-        "Heston": heston_a,
-    }
+    # Unpack aligned arrays
+    model_surfaces: Dict[str, np.ndarray] = {}
+    for i, name in enumerate(all_names):
+        if name == "_market":
+            market_a = aligned[i]
+        else:
+            model_surfaces[name] = aligned[i]
     names = list(model_surfaces.keys())
 
     print("\n" + "=" * 65)

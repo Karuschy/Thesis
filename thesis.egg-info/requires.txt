@@ -1,7 +1,6 @@
 torch>=2.0
 numpy
 pandas
-polars
 pyarrow
 plotly
 matplotlib

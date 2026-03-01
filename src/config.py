@@ -201,14 +201,14 @@ class ModelConfig:
     model_type: Literal["mlp", "conv"] = "mlp"
     
     # Latent space
-    latent_dim: int = 8
+    latent_dim: int = 24
     
     # --- MLP-specific ---
-    hidden_dims: tuple[int, ...] = (256, 128)
+    hidden_dims: tuple[int, ...] = (384, 192)
     
     # --- Conv-specific ---
     channels: tuple[int, ...] = (32, 64, 128)
-    fc_dim: int = 256
+    fc_dim: int = 128
     batchnorm: bool = True
     
     # Input shape will be set from data
@@ -224,11 +224,11 @@ class TrainConfig:
     """Configuration for training loop."""
     # Optimization
     epochs: int = 100
-    lr: float = 1e-3
-    weight_decay: float = 0.0
+    lr: float = 7e-4
+    weight_decay: float = 1e-6
     
     # VAE-specific
-    beta: float = 1.0  # KL weight (beta-VAE)
+    beta: float = 0.25  # KL weight (beta-VAE)
     
     # Early stopping
     patience: int | None = 20  # None = no early stopping

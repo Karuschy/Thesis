@@ -36,31 +36,33 @@ def parse_args():
     parser.add_argument("--model_type", type=str, default="mlp",
                         choices=["mlp", "conv"],
                         help="VAE architecture: 'mlp' (baseline) or 'conv' (spatial)")
-    parser.add_argument("--latent_dim", type=int, default=8,
-                        help="Latent dimension (start small: 4-8)")
-    parser.add_argument("--hidden_dims", type=int, nargs="+", default=[256, 128],
+    parser.add_argument("--latent_dim", type=int, default=24,
+                        help="Latent dimension")
+    parser.add_argument("--hidden_dims", type=int, nargs="+", default=[384, 192],
                         help="Hidden layer sizes for MLP encoder/decoder")
     # Conv-specific
     parser.add_argument("--channels", type=int, nargs="+", default=[32, 64, 128],
                         help="Channel widths for ConvVAE encoder stages")
-    parser.add_argument("--fc_dim", type=int, default=256,
+    parser.add_argument("--fc_dim", type=int, default=128,
                         help="FC bottleneck width after conv flatten (ConvVAE only)")
     parser.add_argument("--no_batchnorm", action="store_true",
                         help="Disable BatchNorm in ConvVAE")
     
     # Training args
     parser.add_argument("--epochs", type=int, default=100)
-    parser.add_argument("--batch_size", type=int, default=32)
-    parser.add_argument("--lr", type=float, default=1e-3)
-    parser.add_argument("--beta", type=float, default=1.0,
+    parser.add_argument("--batch_size", type=int, default=64)
+    parser.add_argument("--lr", type=float, default=7e-4)
+    parser.add_argument("--beta", type=float, default=0.25,
                         help="KL weight (beta-VAE)")
     parser.add_argument("--patience", type=int, default=None,
                         help="Early stopping patience (epochs without improvement)")
-    parser.add_argument("--weight_decay", type=float, default=0.0,
+    parser.add_argument("--weight_decay", type=float, default=1e-6,
                         help="L2 regularization weight for Adam optimizer")
     parser.add_argument("--normalize", action="store_true", default=True,
                         help="Normalize data (fit on train)")
     parser.add_argument("--no_normalize", dest="normalize", action="store_false")
+    parser.add_argument("--log_transform", action="store_true", default=False,
+                        help="Train in log-IV space (log before z-score, exp after inverse)")
     
     # Output args
     parser.add_argument("--output_dir", type=str, default="artifacts/train",
@@ -90,7 +92,9 @@ def main():
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     
-    # Create dataloaders (enable pin_memory + workers for GPU)
+    # Create dataloaders (pin_memory helps GPU transfers; num_workers=0
+    # because Windows 'spawn' multiprocessing has huge per-epoch overhead
+    # that dominates for small-to-medium datasets)
     use_cuda = device.type == "cuda"
     print(f"Loading data from: {args.parquet}")
     bundle = create_dataloaders(
@@ -100,9 +104,10 @@ def main():
         val_ratio=args.val_ratio,
         batch_size=args.batch_size,
         normalize=args.normalize,
+        use_log_transform=args.log_transform,
         return_date=False,
         pin_memory=use_cuda,
-        num_workers=4 if use_cuda else 0,
+        num_workers=0,
     )
     
     print(f"Data splits - Train: {len(bundle.train_dates)}, Val: {len(bundle.val_dates)}, Test: {len(bundle.test_dates)}")
@@ -162,6 +167,7 @@ def main():
         "scaler": {
             "mean": bundle.scaler.mean.tolist() if bundle.scaler else None,
             "std": bundle.scaler.std.tolist() if bundle.scaler else None,
+            "log_transform": bundle.scaler.log_transform if bundle.scaler else False,
         },
         "best_epoch": best_epoch + 1,
         "best_val_loss": best_val_loss,
