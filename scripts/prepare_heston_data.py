@@ -18,59 +18,8 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from scipy.stats import norm
 
-
-# ---------------------------------------------------------------------------
-# Delta → Strike conversion
-# ---------------------------------------------------------------------------
-
-def delta_to_strike(
-    delta: float,
-    S0: float,
-    T: float,
-    r: float,
-    q: float,
-    sigma: float,
-    cp_flag: str,
-) -> float:
-    """
-    Convert Black-Scholes delta (absolute, 0-1) to strike price K.
-
-    Args:
-        delta:   Absolute delta in (0, 1).
-        S0:      Spot price.
-        T:       Time to maturity in years.
-        r:       Risk-free rate (DECIMAL, e.g. 0.05 for 5%).
-        q:       Dividend / carry yield (decimal).
-        sigma:   Implied volatility (decimal).
-        cp_flag: "C" or "P".
-
-    Returns:
-        Strike price K, or NaN on failure.
-    """
-    if T <= 0 or sigma <= 0:
-        return np.nan
-
-    # IvyDB stores signed deltas: positive for calls, negative for puts.
-    # The inversion formula needs absolute delta in (0, 1).
-    delta = abs(delta)
-
-    sqrt_T = np.sqrt(T)
-
-    if cp_flag == "C":
-        adj = delta * np.exp(q * T)
-        if adj <= 0 or adj >= 1:
-            return np.nan
-        d1 = norm.ppf(adj)
-    else:  # P
-        adj = delta * np.exp(q * T)
-        if adj <= 0 or adj >= 1:
-            return np.nan
-        d1 = -norm.ppf(adj)
-
-    K = S0 * np.exp(-(d1 * sigma * sqrt_T - (r - q + 0.5 * sigma**2) * T))
-    return K
+from src.models.heston.bs import strike_from_delta
 
 
 # ---------------------------------------------------------------------------
@@ -194,9 +143,9 @@ def main():
     # ------------------------------------------------------------------
     print("  Converting delta → strike...")
     hdf["K"] = hdf.apply(
-        lambda row: delta_to_strike(
-            row["delta"], row["S0"], row["T"],
-            row["r"], row["q"], row["iv_market"], row["cp_flag"],
+        lambda row: strike_from_delta(
+            row["S0"], row["T"], row["r"],
+            row["q"], row["iv_market"], row["delta"], row["cp_flag"],
         ),
         axis=1,
     )

@@ -42,19 +42,23 @@ class ComparisonMetrics:
 
 
 def compute_metrics(a: np.ndarray, b: np.ndarray) -> ComparisonMetrics:
-    """Compute comparison metrics between two [N,C,H,W] surface arrays."""
+    """Compute comparison metrics between two [N,C,H,W] surface arrays.
+
+    NaN-safe: cells where either array is NaN are excluded from all
+    aggregations (important for Heston surfaces that may have gaps).
+    """
     assert a.shape == b.shape, f"Shape mismatch: {a.shape} vs {b.shape}"
     err = a - b
     ae = np.abs(err)
     se = err ** 2
-    per_cell = np.mean(ae, axis=0)
+    per_cell = np.nanmean(ae, axis=0)
     return ComparisonMetrics(
-        mse=float(np.mean(se)),
-        mae=float(np.mean(ae)),
-        rmse=float(np.sqrt(np.mean(se))),
-        max_error=float(np.max(ae)),
-        mean_per_cell_mae=float(np.mean(per_cell)),
-        std_per_cell_mae=float(np.std(per_cell)),
+        mse=float(np.nanmean(se)),
+        mae=float(np.nanmean(ae)),
+        rmse=float(np.sqrt(np.nanmean(se))),
+        max_error=float(np.nanmax(ae)),
+        mean_per_cell_mae=float(np.nanmean(per_cell)),
+        std_per_cell_mae=float(np.nanstd(per_cell)),
         n_samples=a.shape[0],
     )
 

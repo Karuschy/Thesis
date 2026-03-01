@@ -182,6 +182,14 @@ def main():
     best_val_loss = history[best_epoch].val_loss
     print(f"\nBest validation ELBO: {best_val_loss:.6f} at epoch {best_epoch + 1}")
     
+    # Reload best model weights (fit_vae saves best_model.pt at the best epoch,
+    # but model.state_dict() currently holds the last epoch's weights)
+    best_model_path = output_dir / "best_model.pt"
+    if best_model_path.exists():
+        best_ckpt = torch.load(best_model_path, map_location=device, weights_only=False)
+        model.load_state_dict(best_ckpt["model_state_dict"])
+        print(f"Reloaded best model weights from epoch {best_ckpt['epoch']}")
+    
     # Save final checkpoint
     checkpoint = {
         "model_type": args.model_type,

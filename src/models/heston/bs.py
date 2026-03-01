@@ -316,20 +316,27 @@ def strike_from_delta(
         Strike corresponding to the given delta.
     """
     is_call = cp_flag in ("C", "c", "call", "Call", "CALL")
-    
-    # Ensure delta is in proper range
+
+    if T <= 0 or sigma <= 0:
+        return math.nan
+
+    # Use absolute delta for the inversion
+    delta_abs = abs(delta)
+    adj = delta_abs * math.exp(q * T)
+
+    if adj <= 0 or adj >= 1:
+        return math.nan
+
     if is_call:
-        # Call delta in (0, 1)
-        delta = abs(delta)
-        d1 = norm.ppf(delta * math.exp(q * T))
+        # Call delta: Δ_C = e^{-qT} N(d1)  →  d1 = Φ⁻¹(Δ_C · e^{qT})
+        d1 = norm.ppf(adj)
     else:
-        # Put delta in (-1, 0), we use absolute value
-        delta = -abs(delta)
-        d1 = norm.ppf((delta + 1) * math.exp(q * T))
-    
+        # Put delta: |Δ_P| = e^{-qT} N(-d1)  →  d1 = -Φ⁻¹(|Δ_P| · e^{qT})
+        d1 = -norm.ppf(adj)
+
     # Invert d1 formula to get K
     # d1 = [ln(S/K) + (r - q + 0.5*sigma^2)*T] / (sigma*sqrt(T))
     # K = S * exp(-d1 * sigma * sqrt(T) + (r - q + 0.5*sigma^2)*T)
-    
+
     K = S * math.exp(-d1 * sigma * math.sqrt(T) + (r - q + 0.5 * sigma**2) * T)
     return K
