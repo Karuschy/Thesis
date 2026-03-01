@@ -2,6 +2,13 @@
 
 from src.utils.scaler import ChannelStandardizer
 from src.utils.training import TrainStats, evaluate, train_epoch, fit_vae
+from src.utils.arbitrage import (
+    calendar_penalty,
+    butterfly_penalty,
+    compute_arb_penalty,
+    count_calendar_violations,
+    count_butterfly_violations,
+)
 from src.utils.eval import (
     EvalMetrics,
     DetailedEvalResult,
@@ -27,6 +34,12 @@ __all__ = [
     "evaluate",
     "train_epoch",
     "fit_vae",
+    # Arbitrage
+    "calendar_penalty",
+    "butterfly_penalty",
+    "compute_arb_penalty",
+    "count_calendar_violations",
+    "count_butterfly_violations",
     # Evaluation
     "EvalMetrics",
     "DetailedEvalResult",

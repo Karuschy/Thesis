@@ -17,6 +17,14 @@ class ChannelStandardizer:
         self.mean = None
         self.std = None
 
+    def to(self, device: torch.device | str) -> "ChannelStandardizer":
+        """Move scaler tensors to the given device (for GPU penalty calc)."""
+        if self.mean is not None:
+            self.mean = self.mean.to(device)
+        if self.std is not None:
+            self.std = self.std.to(device)
+        return self
+
     # ── helpers ──────────────────────────────────────────────────────────
     def _apply_log(self, x: torch.Tensor) -> torch.Tensor:
         return torch.log(x.clamp(min=self.LOG_CLAMP_MIN))

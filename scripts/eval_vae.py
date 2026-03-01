@@ -168,7 +168,7 @@ def main():
         use_log_transform=train_args.get("log_transform", False),
         return_date=True,  # Need dates for plotting
         pin_memory=use_cuda,
-        num_workers=4 if use_cuda else 0,
+        num_workers=0,  # Windows spawn overhead kills GPU perf
     )
     
     print(f"Test set size: {len(bundle.test_dates)} samples")

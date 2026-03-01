@@ -64,6 +64,14 @@ def parse_args():
     parser.add_argument("--log_transform", action="store_true", default=False,
                         help="Train in log-IV space (log before z-score, exp after inverse)")
     
+    # Arbitrage penalty args
+    parser.add_argument("--arb_weight", type=float, default=0.0,
+                        help="Overall weight for no-arbitrage soft penalty. 0 = disabled (baseline).")
+    parser.add_argument("--lambda_cal", type=float, default=0.1,
+                        help="Relative weight for calendar-spread penalty within arb term")
+    parser.add_argument("--lambda_but", type=float, default=1.0,
+                        help="Relative weight for butterfly (convexity) penalty within arb term")
+    
     # Output args
     parser.add_argument("--output_dir", type=str, default="artifacts/train",
                         help="Directory to save checkpoints and logs")
@@ -133,6 +141,26 @@ def main():
     total_params = sum(p.numel() for p in model.parameters())
     print(f"Total parameters: {total_params:,}")
     
+    # Prepare arbitrage penalty inputs (if enabled)
+    arb_kwargs = {}
+    if args.arb_weight > 0:
+        import numpy as np
+        # Move scaler to GPU so inverse_transform works during training
+        if bundle.scaler is not None:
+            bundle.scaler.to(device)
+        # Convert days_grid to float tensor on device
+        days_tensor = torch.from_numpy(
+            bundle.grid_spec.days_grid.astype(np.float32)
+        ).to(device)
+        arb_kwargs = dict(
+            scaler=bundle.scaler,
+            days_grid=days_tensor,
+            arb_weight=args.arb_weight,
+            lambda_cal=args.lambda_cal,
+            lambda_but=args.lambda_but,
+        )
+        print(f"Arbitrage penalty: arb_weight={args.arb_weight}, lambda_cal={args.lambda_cal}, lambda_but={args.lambda_but}")
+    
     # Train
     print(f"\nTraining for {args.epochs} epochs...")
     history = fit_vae(
@@ -146,6 +174,7 @@ def main():
         device=device,
         checkpoint_dir=output_dir,  # Will save best_model.pt here
         patience=args.patience,
+        **arb_kwargs,
     )
     
     # Find best epoch by validation loss (ELBO)
@@ -185,9 +214,11 @@ def main():
             "train_loss": h.train_loss,
             "train_recon": h.train_recon,
             "train_kl": h.train_kl,
+            "train_arb": h.train_arb,
             "val_loss": h.val_loss,
             "val_recon": h.val_recon,
             "val_kl": h.val_kl,
+            "val_arb": h.val_arb,
         }
         for i, h in enumerate(history)
     ]
@@ -198,8 +229,9 @@ def main():
     
     # Final test evaluation (quick preview)
     print("\n--- Test Set Preview ---")
-    test_loss, test_recon, test_kl = evaluate(model, bundle.test_loader, device, beta=args.beta)
-    print(f"Test ELBO: {test_loss:.6f} (recon: {test_recon:.6f}, KL: {test_kl:.6f})")
+    test_loss, test_recon, test_kl, test_arb = evaluate(model, bundle.test_loader, device, beta=args.beta, **arb_kwargs)
+    arb_str = f", arb: {test_arb:.6f}" if args.arb_weight > 0 else ""
+    print(f"Test ELBO: {test_loss:.6f} (recon: {test_recon:.6f}, KL: {test_kl:.6f}{arb_str})")
     print("\nRun scripts/eval_vae.py for detailed test evaluation with plots.")
 
 
