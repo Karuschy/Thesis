@@ -17,9 +17,12 @@ from .bs import (
     strike_from_delta,
 )
 from .calibrate import (
+    PARAM_BOUNDS,
     CalibrationResult,
     calibrate_heston,
     calibrate_heston_by_date,
+    calibrate_heston_robust,
+    params_reasonable,
 )
 from .pricer import (
     HestonParams,
@@ -46,6 +49,9 @@ __all__ = [
     "heston_iv_surface",
     # Calibration
     "CalibrationResult",
+    "PARAM_BOUNDS",
     "calibrate_heston",
     "calibrate_heston_by_date",
+    "calibrate_heston_robust",
+    "params_reasonable",
 ]

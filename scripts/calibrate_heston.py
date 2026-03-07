@@ -7,7 +7,7 @@ regenerates delta-grid IV surfaces for comparison with the VAE.
 
 Usage:
     python scripts/calibrate_heston.py --ticker AAPL
-    python scripts/calibrate_heston.py --ticker AAPL --dates_from artifacts/eval/surfaces/vae_surface_dates.csv
+    python scripts/calibrate_heston.py --ticker AAPL --dates_from artifacts/eval/AAPL/mlp/surfaces/vae_surface_dates.csv
 """
 from __future__ import annotations
 
@@ -25,8 +25,9 @@ from src.data.volsurface_grid import GridSpec
 from src.models.heston import (
     CalibrationResult,
     HestonParams,
-    calibrate_heston,
+    calibrate_heston_robust,
     heston_iv,
+    params_reasonable,
     strike_from_delta,
 )
 
@@ -41,28 +42,70 @@ def generate_heston_surface(
     r: float,
     q: float,
     grid: GridSpec,
+    market_atm_iv: float | None = None,
 ) -> np.ndarray:
     """
     Build an IV surface on the standard (cp × days × delta) grid.
 
-    Returns:
-        np.ndarray  shape (C, H, W), NaN where pricing fails.
+    Uses a two-pass approach for accurate delta→strike conversion:
+      1. Compute the Heston ATM IV at each maturity.
+      2. Use those per-maturity IVs as the ``sigma`` input to
+         ``strike_from_delta`` for every delta at that tenor.
+
+    Parameters
+    ----------
+    market_atm_iv : float, optional
+        Fallback ATM implied vol (from market data).  Used as the seed
+        sigma when the Heston model itself cannot be evaluated.
+
+    Returns
+    -------
+    np.ndarray  shape (C, H, W), NaN where pricing fails.
     """
     n_cp = len(grid.cp_order)
     n_days = len(grid.days_grid)
     n_delta = len(grid.delta_grid)
     surface = np.full((n_cp, n_days, n_delta), np.nan, dtype=np.float32)
 
-    sigma_atm = max(np.sqrt(abs(params.v0)), 0.01)
+    # Seed sigma: prefer market ATM IV, else sqrt(long-run variance)
+    sigma_base = (
+        market_atm_iv
+        if market_atm_iv and 0.01 < market_atm_iv < 2.0
+        else max(np.sqrt(abs(params.theta)), 0.05)
+    )
 
+    # --- Pass 1: per-maturity ATM IV from the Heston model ----------------
+    atm_sigmas: list[float] = []
+    for days in grid.days_grid:
+        T = float(days) / 365.0
+        if T <= 0:
+            atm_sigmas.append(sigma_base)
+            continue
+        try:
+            K_atm = strike_from_delta(S0, T, r, q, sigma_base, 0.50, "C")
+            if K_atm is not None and not np.isnan(K_atm) and K_atm > 0:
+                iv_atm = heston_iv(S0, K_atm, T, r, q, params, "C")
+                if iv_atm is not None and 0.01 < iv_atm < 2.0:
+                    atm_sigmas.append(iv_atm)
+                else:
+                    atm_sigmas.append(sigma_base)
+            else:
+                atm_sigmas.append(sigma_base)
+        except Exception:
+            atm_sigmas.append(sigma_base)
+
+    # --- Pass 2: full surface using per-maturity sigma --------------------
     for i_cp, cp in enumerate(grid.cp_order):
         for i_d, days in enumerate(grid.days_grid):
             T = float(days) / 365.0
             if T <= 0:
                 continue
+            sigma_for_strike = atm_sigmas[i_d]
             for i_del, delta in enumerate(grid.delta_grid):
                 try:
-                    K = strike_from_delta(S0, T, r, q, sigma_atm, float(delta), cp)
+                    K = strike_from_delta(
+                        S0, T, r, q, sigma_for_strike, float(delta), cp,
+                    )
                     if K is None or np.isnan(K) or K <= 0:
                         continue
                     iv = heston_iv(S0, K, T, r, q, params, cp)
@@ -81,7 +124,15 @@ def calibrate_single_date(date_df: pd.DataFrame) -> tuple[CalibrationResult, dic
     S0 = float(date_df["S0"].iloc[0])
     r = float(date_df["r"].mean())
     q = float(date_df["q"].mean())
-    result = calibrate_heston(
+
+    # Market ATM IV for surface-generation fallback
+    atm_mask = (date_df["delta"].abs() - 0.50).abs() < 0.06
+    if atm_mask.any():
+        market_atm_iv = float(date_df.loc[atm_mask, "iv_market"].mean())
+    else:
+        market_atm_iv = float(date_df["iv_market"].mean())
+
+    result = calibrate_heston_robust(
         S0=S0, r=r, q=q,
         maturities=date_df["T"].values,
         strikes=date_df["K"].values,
@@ -89,7 +140,7 @@ def calibrate_single_date(date_df: pd.DataFrame) -> tuple[CalibrationResult, dic
         cp_flags=date_df["cp_flag"].values,
         max_iterations=500,
     )
-    return result, {"S0": S0, "r": r, "q": q}
+    return result, {"S0": S0, "r": r, "q": q, "market_atm_iv": market_atm_iv}
 
 
 # ---------------------------------------------------------------------------
@@ -107,7 +158,7 @@ def parse_args():
                         "(e.g. VAE test dates for fair comparison)")
     p.add_argument("--grid_spec", type=str, default=None,
                    help="JSON grid spec from VAE eval (ensures identical grids). "
-                        "Default: artifacts/eval/surfaces/grid_spec.json")
+                        "Default: data/processed/heston/surfaces/grid_spec.json")
     p.add_argument("--min_fill", type=float, default=0.50,
                    help="Minimum fraction of non-NaN cells to keep a surface (default 0.50)")
     return p.parse_args()
@@ -117,7 +168,7 @@ def _load_grid(path: Optional[str]) -> GridSpec:
     """Load GridSpec from JSON or fall back to defaults."""
     candidates = [
         path,
-        "artifacts/eval/surfaces/grid_spec.json",
+        "data/processed/heston/surfaces/grid_spec.json",
     ]
     for c in candidates:
         if c is not None and Path(c).exists():
@@ -200,6 +251,7 @@ def main():
                     "error": result.error,
                     "success": result.success,
                     "feller": result.params.feller_condition,
+                    "reasonable": params_reasonable(result.params),
                 })
                 mkt_by_date[date] = mkt
             except Exception as e:
@@ -208,6 +260,7 @@ def main():
                     "v0": np.nan, "kappa": np.nan, "theta": np.nan,
                     "sigma": np.nan, "rho": np.nan,
                     "error": np.inf, "success": False, "feller": False,
+                    "reasonable": False,
                 })
 
     calib_df = pd.DataFrame(calib_rows)
@@ -215,6 +268,8 @@ def main():
     print(f"\n  Calibrated: {n_ok}/{len(calib_df)} succeeded "
           f"({100 * n_ok / len(calib_df):.1f}%)")
     print(f"  Feller satisfied: {calib_df['feller'].sum()}")
+    n_reasonable = calib_df["reasonable"].sum()
+    print(f"  Params reasonable: {n_reasonable}/{n_ok}")
 
     calib_path = out_dir / f"{ticker}_heston_params.csv"
     calib_df.to_csv(calib_path, index=False)
@@ -238,7 +293,10 @@ def main():
                 theta=row["theta"], sigma=row["sigma"], rho=row["rho"],
             )
             try:
-                surf = generate_heston_surface(params, mkt["S0"], mkt["r"], mkt["q"], grid)
+                surf = generate_heston_surface(
+                    params, mkt["S0"], mkt["r"], mkt["q"], grid,
+                    market_atm_iv=mkt.get("market_atm_iv"),
+                )
                 fill = np.sum(~np.isnan(surf)) / surf.size
                 if fill >= args.min_fill:
                     surfaces.append(surf)

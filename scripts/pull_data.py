@@ -296,6 +296,10 @@ def main():
 
     print(f"=== Pulling data for {ticker}  [{start} → {end}] ===\n")
 
+    # VIX note: VIX is a volatility index, not an equity. SECID resolution
+    # should still work via IvyDB secnmd, but underlying "price" is the VIX
+    # index level. No dividends (q=0). Heston GBM dynamics are a poor fit
+    # for mean-reverting VIX — if calibration fails, that's a thesis finding.
     puller = WRDSPuller(args.username)
     try:
         # 0. Resolve SECID

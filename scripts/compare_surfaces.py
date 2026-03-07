@@ -6,12 +6,15 @@ metrics + plots.
 
 Usage:
     python scripts/compare_surfaces.py \
-        --vae_dir "MLP=artifacts/eval/mlp/surfaces" \
-        --vae_dir "Conv=artifacts/eval/conv/surfaces" \
-        --vae_dir "MLP-log=artifacts/eval/mlp_log/surfaces" \
-        --vae_dir "Conv-log=artifacts/eval/conv_log/surfaces" \
+        --vae_dir "MLP=artifacts/eval/AAPL/mlp/surfaces" \
+        --vae_dir "Conv=artifacts/eval/AAPL/conv/surfaces" \
+        --vae_dir "MLP-log=artifacts/eval/AAPL/mlp_log/surfaces" \
+        --vae_dir "Conv-log=artifacts/eval/AAPL/conv_log/surfaces" \
+        --vae_dir "MLP-log-arb=artifacts/eval/AAPL/mlp_log_arb/surfaces" \
+        --vae_dir "Conv-log-arb=artifacts/eval/AAPL/conv_log_arb/surfaces" \
         --heston_dir data/processed/heston/surfaces \
-        --output_dir artifacts/comparison
+        --ticker AAPL \
+        --output_dir artifacts/comparison/AAPL
 """
 from __future__ import annotations
 
@@ -283,6 +286,8 @@ MODEL_COLOURS = {
     "Conv": "#2ca02c",
     "MLP-log": "#9467bd",
     "Conv-log": "#8c564b",
+    "MLP-log-arb": "#17becf",
+    "Conv-log-arb": "#bcbd22",
     "Heston": "#ff7f0e",
 }
 
@@ -533,7 +538,7 @@ def parse_args():
                    help="Heston calibrated surfaces directory")
     p.add_argument("--ticker", type=str, default="AAPL")
     p.add_argument("--output_dir", type=str,
-                   default="artifacts/comparison",
+                   default="artifacts/comparison/AAPL",
                    help="Where to write metrics + plots")
     p.add_argument("--n_plot_samples", type=int, default=5,
                    help="Number of sample date slices to plot")
@@ -558,12 +563,19 @@ def _parse_vae_dirs(args) -> List[Tuple[str, Path]]:
                 path = Path(item)
                 name = path.parent.name  # infer name from parent dir
                 entries.append((name, path))
-    # Defaults if nothing provided
+    # Defaults if nothing provided (uses AAPL per-ticker layout)
     if not entries:
+        ticker = getattr(args, 'ticker', 'AAPL')
         entries = [
-            ("MLP", Path("artifacts/eval/mlp/surfaces")),
-            ("Conv", Path("artifacts/eval/conv/surfaces")),
+            ("MLP",          Path(f"artifacts/eval/{ticker}/mlp/surfaces")),
+            ("MLP-log",      Path(f"artifacts/eval/{ticker}/mlp_log/surfaces")),
+            ("MLP-log-arb",  Path(f"artifacts/eval/{ticker}/mlp_log_arb/surfaces")),
+            ("Conv",         Path(f"artifacts/eval/{ticker}/conv/surfaces")),
+            ("Conv-log",     Path(f"artifacts/eval/{ticker}/conv_log/surfaces")),
+            ("Conv-log-arb", Path(f"artifacts/eval/{ticker}/conv_log_arb/surfaces")),
         ]
+        # Filter to those that actually exist
+        entries = [(n, p) for n, p in entries if p.exists()]
     return entries
 
 

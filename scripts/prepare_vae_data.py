@@ -81,12 +81,11 @@ def main():
         vs[c] = pd.to_numeric(vs[c], errors="raise").astype("float32")
 
     # --- sanity filters ---
+    # Only filter on columns the VAE actually needs (date, days, delta, cp_flag, impl_volatility).
+    # impl_strike/impl_premium/dispersion are kept in parquet but not used by the model.
     mask = (
         (vs["days"] > 0)
         & np.isfinite(vs["impl_volatility"]) & (vs["impl_volatility"] > 0)
-        & np.isfinite(vs["impl_strike"]) & (vs["impl_strike"] > 0)
-        & np.isfinite(vs["impl_premium"]) & (vs["impl_premium"] >= 0)
-        & np.isfinite(vs["dispersion"])
     )
     n_before = len(vs)
     vs = vs.loc[mask].copy()
@@ -99,6 +98,18 @@ def main():
     if dup_count > 0:
         vs = vs.drop_duplicates(subset=key, keep="first").copy()
         print(f"  Dropped {dup_count:,} duplicate rows")
+
+    # --- drop incomplete dates ---
+    # Each date must have the full grid.
+    # Dates with NaN-dropped rows will crash tensorization.
+    expected_rows_per_date = int(vs.groupby("date").size().max())
+    rows_per_date = vs.groupby("date").size()
+    complete_dates = rows_per_date[rows_per_date == expected_rows_per_date].index
+    n_incomplete = int(vs["date"].nunique() - len(complete_dates))
+    if n_incomplete > 0:
+        vs = vs[vs["date"].isin(complete_dates)].copy()
+        print(f"  Dropped {n_incomplete:,} incomplete dates "
+              f"(expected {expected_rows_per_date} rows/date)")
 
     # --- sort ---
     vs = vs.sort_values(["date", "days", "delta", "cp_flag"]).reset_index(drop=True)
@@ -121,6 +132,7 @@ def main():
         "cp_flag_levels": list(map(str, vs["cp_flag"].cat.categories)),
         "duplicate_rows_dropped": dup_count,
         "invalid_rows_dropped": n_dropped,
+        "incomplete_dates_dropped": n_incomplete,
         "columns": list(vs.columns),
     }
     with open(out_meta, "w") as f:

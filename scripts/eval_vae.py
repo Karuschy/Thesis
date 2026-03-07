@@ -4,7 +4,7 @@ Evaluate trained VAE on the test set.
 Loads the best checkpoint, runs comprehensive evaluation, and generates plots.
 
 Usage:
-    python scripts/eval_vae.py --checkpoint artifacts/train/vae_checkpoint.pt --parquet data/processed/vae/parquet/AAPL_vsurf_processed.parquet
+    python scripts/eval_vae.py --checkpoint artifacts/train/AAPL/mlp/vae_checkpoint.pt --parquet data/processed/vae/parquet/AAPL_vsurf_processed.parquet --output_dir artifacts/eval/AAPL/mlp
 """
 from __future__ import annotations
 

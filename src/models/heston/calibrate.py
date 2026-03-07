@@ -34,6 +34,31 @@ class CalibrationResult:
         )
 
 
+# ---------------------------------------------------------------------------
+# Parameter bounds for physically plausible Heston parameters
+# ---------------------------------------------------------------------------
+
+PARAM_BOUNDS = {
+    "v0":    (0.001, 2.0),    # initial variance: ~3% to ~141% vol
+    "kappa": (0.01,  20.0),   # mean reversion speed
+    "theta": (0.001, 2.0),    # long-run variance
+    "sigma": (0.01,  5.0),    # vol-of-vol
+    "rho":   (-0.99, 0.1),    # correlation (negative for equities)
+}
+
+
+def params_reasonable(params: HestonParams) -> bool:
+    """Check if Heston parameters are within physically plausible bounds."""
+    b = PARAM_BOUNDS
+    return (
+        b["v0"][0] <= params.v0 <= b["v0"][1]
+        and b["kappa"][0] <= params.kappa <= b["kappa"][1]
+        and b["theta"][0] <= params.theta <= b["theta"][1]
+        and b["sigma"][0] <= params.sigma <= b["sigma"][1]
+        and b["rho"][0] <= params.rho <= b["rho"][1]
+    )
+
+
 def calibrate_heston(
     S0: float,
     r: float,
@@ -231,6 +256,84 @@ def calibrate_heston(
         success=success,
         message=message,
     )
+
+
+def calibrate_heston_robust(
+    S0: float,
+    r: float,
+    q: float,
+    maturities: np.ndarray,
+    strikes: np.ndarray,
+    market_ivs: np.ndarray,
+    cp_flags: np.ndarray,
+    *,
+    max_iterations: int = 150,
+    tolerance: float = 1e-6,
+) -> CalibrationResult:
+    """
+    Multi-start Heston calibration with parameter bounds checking.
+
+    Tries up to 5 diverse starting parameter sets and returns the best
+    result whose parameters fall within ``PARAM_BOUNDS``.  If no start
+    produces physically plausible parameters, returns the overall best
+    result so the caller always gets something.
+    """
+    assert len(maturities) == len(strikes) == len(market_ivs) == len(cp_flags)
+
+    # Data-driven initial variance from near-ATM implied vol
+    atm_mask = np.abs(strikes / S0 - 1.0) < 0.10
+    if atm_mask.any():
+        v0_base = float(np.mean(market_ivs[atm_mask]) ** 2)
+    else:
+        v0_base = float(np.mean(market_ivs) ** 2)
+    v0_base = float(np.clip(v0_base, 0.005, 1.0))
+
+    # Diverse starting points (vary kappa, vol-of-vol, correlation)
+    starters = [
+        HestonParams(v0=v0_base,         kappa=1.0, theta=v0_base,         sigma=0.3, rho=-0.50),
+        HestonParams(v0=v0_base,         kappa=2.0, theta=v0_base,         sigma=0.5, rho=-0.70),
+        HestonParams(v0=v0_base,         kappa=0.5, theta=v0_base * 0.8,   sigma=0.2, rho=-0.30),
+    ]
+
+    results: list[CalibrationResult] = []
+
+    for starter in starters:
+        result = calibrate_heston(
+            S0, r, q, maturities, strikes, market_ivs, cp_flags,
+            initial_params=starter,
+            max_iterations=max_iterations,
+            tolerance=tolerance,
+            use_market_iv_for_v0=False,
+        )
+        results.append(result)
+
+        # Early exit: good fit with reasonable params
+        if (
+            result.success
+            and params_reasonable(result.params)
+            and result.error < 0.02
+        ):
+            return result
+
+    # Pick the best result with reasonable parameters
+    reasonable = [r for r in results if r.success and params_reasonable(r.params)]
+    if reasonable:
+        return min(reasonable, key=lambda r: r.error)
+
+    # Fallback: best overall (even if params are extreme)
+    successful = [r for r in results if r.success]
+    if successful:
+        best = min(successful, key=lambda r: r.error)
+        return CalibrationResult(
+            params=best.params,
+            error=best.error,
+            n_iterations=best.n_iterations,
+            success=True,
+            message="Converged but params outside reasonable bounds",
+        )
+
+    # All starts failed entirely
+    return results[0]
 
 
 def calibrate_heston_by_date(
