@@ -13,7 +13,6 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader
 
-from src.models.vae_mlp import MLPVAE, vae_loss, masked_vae_loss
 from src.utils.scaler import ChannelStandardizer
 
 
@@ -72,6 +71,7 @@ def create_structured_mask(
         shape: (C, H, W) where H=maturities, W=deltas.
         mask_type: Type of structured mask:
             - "otm": Mask out-of-the-money options (low/high delta)
+            - "short_maturity": Mask short-dated options (early maturities)
             - "long_maturity": Mask long-dated options
             - "corners": Mask corners (OTM + long maturity)
         mask_ratio: Approximate fraction of points to mask.
@@ -83,25 +83,43 @@ def create_structured_mask(
     """
     C, H, W = shape
     mask = torch.zeros(shape, device=device)
+
+    if not 0.0 <= mask_ratio <= 1.0:
+        raise ValueError(f"mask_ratio must be in [0, 1], got {mask_ratio}")
+
+    if mask_ratio == 0.0:
+        return mask
     
     if mask_type == "otm":
         # Mask low and high delta (OTM options)
         n_delta_mask = int(W * mask_ratio / 2)
-        mask[:, :, :n_delta_mask] = 1.0  # Low delta
-        mask[:, :, -n_delta_mask:] = 1.0  # High delta
+        if n_delta_mask > 0:
+            mask[:, :, :n_delta_mask] = 1.0  # Low delta
+            mask[:, :, W - n_delta_mask:] = 1.0  # High delta
         
     elif mask_type == "long_maturity":
         # Mask long-dated options
         n_mat_mask = int(H * mask_ratio)
-        mask[:, -n_mat_mask:, :] = 1.0
+        if n_mat_mask > 0:
+            mask[:, H - n_mat_mask:, :] = 1.0
         
     elif mask_type == "corners":
-        # Mask corners (OTM + long maturity)
-        n_delta = int(W * 0.3)
-        n_mat = int(H * 0.3)
-        mask[:, -n_mat:, :n_delta] = 1.0  # Long mat, low delta
-        mask[:, -n_mat:, -n_delta:] = 1.0  # Long mat, high delta
+        # Mask corners (OTM + long maturity), roughly matching mask_ratio.
+        # Approximation target:
+        #   ratio ≈ 2 * (n_mat/H) * (n_delta/W)
+        # choose n_mat ~ H*sqrt(r), n_delta ~ W*sqrt(r)/2
+        sqrt_r = np.sqrt(mask_ratio)
+        n_mat = max(1, min(H, int(H * sqrt_r)))
+        n_delta = max(1, min(W // 2, int(W * sqrt_r / 2)))
+        mask[:, H - n_mat:, :n_delta] = 1.0  # Long mat, low delta
+        mask[:, H - n_mat:, W - n_delta:] = 1.0  # Long mat, high delta
         
+    elif mask_type == "short_maturity":
+        # Mask short-dated options (early maturities)
+        n_mat_mask = int(H * mask_ratio)
+        if n_mat_mask > 0:
+            mask[:, :n_mat_mask, :] = 1.0
+
     else:
         raise ValueError(f"Unknown mask_type: {mask_type}")
     
@@ -144,7 +162,7 @@ class MaskedEvalMetrics:
 
 @torch.no_grad()
 def evaluate_with_masking(
-    model: MLPVAE,
+    model: torch.nn.Module,
     loader: DataLoader,
     mask: torch.Tensor,
     device: torch.device,
@@ -279,7 +297,7 @@ def evaluate_with_masking(
 
 
 def evaluate_completion_sweep(
-    model: MLPVAE,
+    model: torch.nn.Module,
     loader: DataLoader,
     grid_shape: tuple[int, int, int],
     device: torch.device,
@@ -332,6 +350,102 @@ def evaluate_completion_sweep(
     return results
 
 
+
+
+@torch.no_grad()
+def evaluate_completion_multiseed(
+    model: torch.nn.Module,
+    X_test: torch.Tensor,
+    scaler: ChannelStandardizer,
+    mask_ratio: float,
+    n_seeds: int = 5,
+    batch_size: int = 32,
+    device: torch.device = torch.device("cpu"),
+) -> tuple[float, float, np.ndarray]:
+    """
+    Evaluate surface completion with per-date, per-seed random masks.
+
+    For each seed, every test date receives its own independently drawn random
+    mask. Errors are measured only on the masked (hidden) cells and then
+    averaged over all seeds and dates.
+
+    When mask_ratio == 0, no cells are masked, so the function falls back to
+    reporting the full-surface reconstruction MAE -- useful as a sanity check
+    that 0% masking == normal reconstruction error.
+
+    Args:
+        model: Trained VAE model (must already be on ``device``).
+        X_test: Normalised test surfaces, shape (N, C, H, W), on CPU.
+        scaler: Fitted ChannelStandardizer (must already be on ``device``).
+        mask_ratio: Fraction of grid cells to hide (0.0 to 1.0).
+        n_seeds: Number of independent random seeds to average over.
+        batch_size: GPU batch size for inference.
+        device: Torch device.
+
+    Returns:
+        Tuple of:
+        - mean_mae_vp  : float   -- mean MAE in vol points across dates and seeds
+        - mean_rmse_vp : float   -- sqrt of mean MSE in vol points
+        - per_date_mae : ndarray -- shape (N,), per-date MAE averaged over seeds
+    """
+    model.eval()
+    N, C, H, W = X_test.shape
+    n_cells = C * H * W
+    n_masked = int(n_cells * mask_ratio)
+
+    per_date_mae_sum = np.zeros(N, dtype=np.float64)
+    per_date_mse_sum = np.zeros(N, dtype=np.float64)
+
+    for seed_idx in range(n_seeds):
+        # Build (N, C, H, W) mask -- each date gets an independent random mask
+        rng = np.random.RandomState(seed_idx * 10007)
+        masks_np = np.zeros((N, C, H, W), dtype=np.float32)
+        for i in range(N):
+            if n_masked > 0:
+                flat = np.zeros(n_cells, dtype=np.float32)
+                flat[rng.choice(n_cells, size=n_masked, replace=False)] = 1.0
+                masks_np[i] = flat.reshape(C, H, W)
+        masks = torch.from_numpy(masks_np)  # stay on CPU
+
+        # Batch inference
+        for start in range(0, N, batch_size):
+            end = min(start + batch_size, N)
+            x_batch = X_test[start:end].to(device)
+            m_batch = masks[start:end].to(device)
+
+            # Zero out masked cells before encoding
+            x_masked = x_batch * (1.0 - m_batch)
+            recon, mu, logvar = model(x_masked)
+
+            # Inverse-transform to original IV space (vol points)
+            recon_orig = scaler.inverse_transform(recon).cpu()
+            x_orig = scaler.inverse_transform(x_batch).cpu()
+            m_cpu = m_batch.cpu()
+
+            diff = recon_orig - x_orig
+
+            bs = end - start
+            for j in range(bs):
+                n_m = int(m_cpu[j].sum().item())
+                if n_m > 0:
+                    # Error on masked (hidden) cells only
+                    mae_j = float((diff[j].abs() * m_cpu[j]).sum()) / n_m
+                    mse_j = float((diff[j].pow(2) * m_cpu[j]).sum()) / n_m
+                else:
+                    # mask_ratio == 0: full-surface reconstruction error
+                    mae_j = float(diff[j].abs().mean())
+                    mse_j = float(diff[j].pow(2).mean())
+                per_date_mae_sum[start + j] += mae_j
+                per_date_mse_sum[start + j] += mse_j
+
+    per_date_mae = per_date_mae_sum / n_seeds
+    per_date_mse = per_date_mse_sum / n_seeds
+    mean_mae_vp = float(per_date_mae.mean())
+    mean_rmse_vp = float(np.sqrt(per_date_mse.mean()))
+
+    return mean_mae_vp, mean_rmse_vp, per_date_mae
+
+
 def print_completion_summary(results: List[MaskedEvalMetrics]) -> None:
     """Print a formatted summary table of completion results."""
     print("\n" + "=" * 70)
@@ -339,10 +453,10 @@ def print_completion_summary(results: List[MaskedEvalMetrics]) -> None:
     print("=" * 70)
     print(f"{'Mask %':>8} | {'MSE Masked':>12} | {'MAE Masked':>12} | {'RMSE Masked':>12}")
     print("-" * 70)
-    
+
     for r in results:
         print(f"{r.mask_ratio*100:>7.1f}% | {r.mse_masked:>12.6f} | {r.mae_masked:>12.6f} | {r.rmse_masked:>12.6f}")
-    
+
     if results[0].mae_masked_original is not None:
         print("-" * 70)
         print("In original IV space (vol points):")
@@ -350,7 +464,7 @@ def print_completion_summary(results: List[MaskedEvalMetrics]) -> None:
         print("-" * 70)
         for r in results:
             if r.mae_masked_original is not None:
-                mae_bps = r.mae_masked_original * 100  # Convert to percentage points
+                mae_bps = r.mae_masked_original * 100
                 print(f"{r.mask_ratio*100:>7.1f}% | {r.mse_masked_original:>12.6f} | {r.mae_masked_original:>12.6f} ({mae_bps:.2f}%) | {r.rmse_masked_original:>12.6f}")
-    
+
     print("=" * 70)
