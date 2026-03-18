@@ -56,6 +56,7 @@ class DetailedEvalResult:
     all_recons: torch.Tensor  # [N, C, H, W] reconstructions
     all_targets: torch.Tensor  # [N, C, H, W] original targets
     all_mus: torch.Tensor  # [N, latent_dim] latent means
+    all_logvars: torch.Tensor  # [N, latent_dim] latent log-variances
     dates: Optional[np.ndarray] = None  # [N] dates if available
 
 
@@ -98,6 +99,7 @@ def evaluate_vae(
     all_recons_list: List[torch.Tensor] = []
     all_targets_list: List[torch.Tensor] = []
     all_mus_list: List[torch.Tensor] = []
+    all_logvars_list: List[torch.Tensor] = []
     all_dates_list: List[np.ndarray] = []
     
     has_dates = False
@@ -152,6 +154,7 @@ def evaluate_vae(
             all_recons_list.append(recon.cpu())
             all_targets_list.append(x.cpu())
             all_mus_list.append(mu.cpu())
+            all_logvars_list.append(logvar.cpu())
         
         n_samples += bs
     
@@ -190,6 +193,7 @@ def evaluate_vae(
     all_recons = torch.cat(all_recons_list, dim=0)
     all_targets = torch.cat(all_targets_list, dim=0)
     all_mus = torch.cat(all_mus_list, dim=0)
+    all_logvars = torch.cat(all_logvars_list, dim=0)
     
     dates_arr = None
     if has_dates and all_dates_list:
@@ -201,6 +205,7 @@ def evaluate_vae(
         all_recons=all_recons,
         all_targets=all_targets,
         all_mus=all_mus,
+        all_logvars=all_logvars,
         dates=dates_arr,
     )
 

@@ -289,6 +289,7 @@ def main():
     latent_path = output_dir / "test_latents.pt"
     torch.save({
         "mus": result.all_mus,
+        "logvars": result.all_logvars,
         "dates": result.dates,
     }, latent_path)
     print(f"\nLatent representations saved to: {latent_path}")
