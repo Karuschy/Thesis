@@ -1,6 +1,7 @@
 # ── Data & artifacts (large / generated) ─────────────────────────────
 data/
 artifacts/
+export_artifacts/
 
 # ── Python bytecode ──────────────────────────────────────────────────
 __pycache__/
